@@ -1,0 +1,640 @@
+VISION VITALS — PART 1
+
+BACKEND DEVICE FOUNDATION + SECURITY
+
+You are extending an EXISTING production-oriented Vision Vitals backend.
+
+This is PART 1 of a three-part hardware integration.
+
+IMPORTANT:
+DO NOT rebuild the backend from scratch.
+
+DO NOT replace the existing architecture.
+
+DO NOT delete or rewrite working authentication, AI, storage, analysis, database, or API systems unnecessarily.
+
+Your first action MUST be to inspect the existing repository and understand what already exists.
+
+⸻
+
+1. INSPECT BEFORE MODIFYING
+
+Inspect:
+
+* directory tree
+* backend framework
+* application entrypoint
+* API routes
+* authentication
+* JWT/session implementation
+* authorization
+* database models
+* repositories
+* services
+* schemas
+* migrations
+* StorageProvider
+* AIProvider
+* GeminiProvider
+* MockAIProvider
+* VisionAnalysisService
+* Analysis
+* AnalysisImage
+* AnalysisResult
+* configuration
+* environment handling
+* logging
+* rate limiting
+* tests
+* Docker configuration
+* README
+* architecture/security documentation
+
+Determine how the existing architecture is organized.
+
+REUSE existing abstractions wherever possible.
+
+If a requested component already exists, EXTEND it instead of creating a duplicate.
+
+Do not create competing authentication systems.
+
+Do not create competing database layers.
+
+Do not create competing AI pipelines.
+
+⸻
+
+2. PRIMARY OBJECTIVE
+
+Add the backend foundation required for a physical Vision Vitals device.
+
+Hardware:
+
+* Raspberry Pi Zero 2 W
+* Raspberry Pi Camera Module 3 Wide
+* optional VL53L0X distance sensor
+* controlled LED illumination
+
+The Raspberry Pi is an INPUT DEVICE.
+
+The Raspberry Pi is NOT:
+
+* the backend
+* the database
+* the AI engine
+* the authority for user identity
+* the authority for ownership
+* the authority for health results
+
+The backend remains the security boundary.
+
+⸻
+
+3. TARGET ARCHITECTURE
+
+The target architecture is:
+
+APP / WEB CAMERA
+|
+v
+Vision Vitals Backend
+
+PHYSICAL DEVICE
+Raspberry Pi Zero 2 W
+|
+Camera Module 3 Wide
+|
+v
+HTTPS
+|
+v
+Vision Vitals Backend
+
+Both eventually enter the same analysis pipeline.
+
+Do not create separate AI systems for hardware and app cameras.
+
+⸻
+
+4. DEVICE DOMAIN
+
+Create a proper Device domain/model if one does not already exist.
+
+Conceptually support:
+
+id
+owner_user_id
+device_identifier
+device_name
+device_type
+status
+firmware_version
+software_version
+last_seen_at
+created_at
+updated_at
+
+Use the project’s existing naming conventions and ORM patterns.
+
+device_type must be extensible.
+
+Initial device type:
+
+VISION_VITALS_CAMERA
+
+Do not design the schema so future device types require rewriting the entire device system.
+
+⸻
+
+5. DEVICE OWNERSHIP
+
+Every device belongs to a user.
+
+The SERVER-SIDE authenticated user is authoritative.
+
+NEVER trust from a device request:
+
+* owner_user_id
+* user_id
+* role
+* permissions
+
+A device request must derive identity from the authenticated device credential/session and the server-side device record.
+
+Implement strict ownership checks.
+
+User A must NEVER be able to:
+
+* access User B’s device
+* capture through User B’s device
+* submit sensor readings for User B’s device
+* modify User B’s device
+* revoke User B’s device
+* retrieve User B’s device information
+
+Protect against IDOR/BOLA vulnerabilities.
+
+⸻
+
+6. DEVICE AUTHENTICATION
+
+Implement secure device authentication.
+
+Do NOT authenticate solely with:
+
+device_id
+
+A device must possess a secret credential.
+
+The backend should identify:
+
+device
++
+authenticated device credential/session
+
+Do not store raw device secrets if avoidable.
+
+Store a securely derived/hashed representation.
+
+Never hard-code device secrets.
+
+Never commit device credentials.
+
+Never put secrets in source code.
+
+Never expose device secrets through API responses.
+
+⸻
+
+7. DEVICE SESSION
+
+If DeviceSession already exists, extend it.
+
+Otherwise create it.
+
+Conceptually support:
+
+device_id
+session_identifier
+created_at
+expires_at
+revoked_at
+last_seen_at
+
+A revoked session must immediately become invalid.
+
+An expired session must be rejected.
+
+Do not use ordinary user JWTs as a substitute for proper device authentication unless the existing architecture already provides a secure device-specific mechanism.
+
+Follow existing security conventions where appropriate.
+
+⸻
+
+8. DEVICE REGISTRATION
+
+Implement secure device registration.
+
+Use the existing authenticated user system.
+
+A normal authenticated user should be able to register/pair a device.
+
+Do not allow an unauthenticated client to arbitrarily register devices to another user.
+
+Do not allow a device to claim ownership by submitting:
+
+“user_id”
+
+or:
+
+“owner_user_id”
+
+The server determines ownership.
+
+If the existing architecture has a pairing mechanism, extend it.
+
+If it does not, implement a secure registration flow appropriate for the existing application.
+
+Never return long-term secrets unnecessarily.
+
+⸻
+
+9. DEVICE CREDENTIAL ROTATION
+
+Implement credential rotation.
+
+Requirements:
+
+* old credential becomes invalid when rotation completes
+* new credential is generated securely
+* credential is never logged
+* credential is never stored in plaintext when avoidable
+* credential is never returned unnecessarily
+* revoked devices cannot rotate credentials
+* unauthorized users cannot rotate credentials
+
+⸻
+
+10. DEVICE REVOCATION
+
+Implement device revocation.
+
+Revocation must invalidate active device sessions.
+
+A revoked device must not be able to:
+
+* authenticate
+* heartbeat
+* upload captures
+* submit sensor readings
+
+until explicitly re-registered according to the security model.
+
+Do not simply mark a device revoked while continuing to accept existing sessions.
+
+⸻
+
+11. DEVICE API
+
+Create versioned endpoints under:
+
+/api/v1/devices/
+
+Implement only endpoints appropriate to the existing architecture.
+
+Expected API surface:
+
+POST   /api/v1/devices/register
+GET    /api/v1/devices
+GET    /api/v1/devices/{device_id}
+DELETE /api/v1/devices/{device_id}
+POST   /api/v1/devices/{device_id}/authenticate
+POST   /api/v1/devices/{device_id}/heartbeat
+GET    /api/v1/devices/{device_id}/status
+
+Capture and sensor endpoints will be implemented in PART 2.
+
+Do not duplicate endpoints that already exist.
+
+Follow existing route naming and response conventions.
+
+⸻
+
+12. HEARTBEAT FOUNDATION
+
+Implement the backend side of:
+
+POST /api/v1/devices/{device_id}/heartbeat
+
+The heartbeat should update:
+
+last_seen_at
+
+Optionally update:
+
+software_version
+firmware_version
+
+ONLY if those values are allowed by the architecture.
+
+Do not allow the client to arbitrarily manipulate security-sensitive server state.
+
+⸻
+
+13. DEVICE STATUS
+
+Support statuses such as:
+
+REGISTERED
+ONLINE
+OFFLINE
+REVOKED
+ERROR
+
+Do not rely solely on a device-submitted “status”.
+
+The backend should derive ONLINE/OFFLINE using last_seen_at and a configurable timeout.
+
+Document the timeout.
+
+Use existing enums/configuration patterns if available.
+
+⸻
+
+14. DEVICE RATE LIMITING
+
+Add device-aware rate limiting for:
+
+* registration
+* authentication
+* heartbeat
+
+Capture and sensor rate limits will be completed in PART 2.
+
+Do not introduce Redis unless the existing architecture already requires it.
+
+Create a clean abstraction so distributed rate limiting can be added later.
+
+⸻
+
+15. AUDIT EVENTS
+
+Add audit events for:
+
+* device registered
+* device authenticated
+* failed device authentication
+* device revoked
+* device credential rotated
+* ownership operation
+* heartbeat security failures
+
+NEVER log:
+
+* device secret
+* Gemini API key
+* database password
+* password
+* refresh token
+* raw image
+
+Use the existing audit/logging architecture.
+
+⸻
+
+16. DATABASE MIGRATIONS
+
+Create proper migrations for new database structures.
+
+Never manually modify production schema.
+
+Verify:
+
+fresh database
+|
+v
+migration upgrade
+|
+v
+application starts
+
+Do not break existing migrations.
+
+Use existing migration conventions.
+
+Add indexes where appropriate for:
+
+device_identifier
+owner_user_id
+session identifiers
+revocation/status lookups
+
+Avoid unnecessary indexes.
+
+⸻
+
+17. SECURITY REQUIREMENTS
+
+Review for:
+
+* IDOR/BOLA
+* broken access control
+* device impersonation
+* credential leakage
+* session replay
+* revoked-session acceptance
+* expired-session acceptance
+* enumeration of devices
+* insecure ownership changes
+* excessive API responses
+* rate-limit bypass
+
+Fix vulnerabilities found.
+
+⸻
+
+18. TESTS
+
+Add tests for:
+
+DEVICE
+
+* registration
+* authenticated registration
+* authentication
+* invalid credential
+* expired session
+* revoked session
+* credential rotation
+* device revocation
+* device listing
+* device retrieval
+* device ownership
+* User A accessing User B device
+* User A revoking User B device
+* heartbeat
+* offline status calculation
+
+SECURITY
+
+* missing credentials
+* malformed credentials
+* replayed/revoked credentials
+* unauthorized device access
+* IDOR attempts
+* rate limiting
+
+Do not remove existing tests.
+
+⸻
+
+19. MOCK HARDWARE FOUNDATION
+
+Create a development/test abstraction:
+
+MockHardwareDevice
+
+It must be able to simulate:
+
+* device identity
+* device authentication
+* heartbeat
+* device lifecycle
+
+Do NOT create fake production hardware functionality.
+
+This abstraction exists for automated testing only.
+
+⸻
+
+20. ENVIRONMENT CONFIGURATION
+
+Extend .env.example only if necessary.
+
+Possible settings:
+
+DEVICE_AUTH_ENABLED=
+DEVICE_SESSION_EXPIRE_MINUTES=
+DEVICE_HEARTBEAT_TIMEOUT_SECONDS=
+DEVICE_AUTH_RATE_LIMIT=
+
+Use naming consistent with the existing configuration architecture.
+
+Never place actual secrets in .env.example.
+
+Never hard-code defaults that weaken production security.
+
+⸻
+
+21. GEMINI SECURITY
+
+The hardware must NEVER receive:
+
+GEMINI_API_KEY
+
+The Raspberry Pi must never directly communicate with Gemini.
+
+Required architecture:
+
+Raspberry Pi
+|
+| HTTPS
+v
+Vision Vitals Backend
+|
+| server-side credentials
+v
+Gemini
+
+Do not expose Gemini credentials through:
+
+* API responses
+* frontend configuration
+* device configuration
+* OpenAPI examples
+* logs
+* database records
+
+Preserve MockAIProvider.
+
+Do not modify the AIProvider abstraction unnecessarily.
+
+⸻
+
+22. QUALITY GATE
+
+After implementation:
+
+1. inspect all modified files
+2. format code
+3. run linting if configured
+4. run existing tests
+5. run new device tests
+6. run migration tests
+7. start backend
+8. verify health endpoint
+9. verify OpenAPI generation
+10. verify existing user authentication
+11. verify device registration
+12. verify device authentication
+13. verify device ownership
+14. verify heartbeat
+15. verify revocation
+16. verify credential rotation
+17. search repository for secrets
+18. verify Gemini key is not exposed
+19. verify Docker build if applicable
+
+Do NOT fabricate test results.
+
+If a test fails:
+
+* diagnose it
+* fix the underlying issue
+* rerun the failed test
+* rerun the relevant suite
+
+⸻
+
+23. DO NOT IMPLEMENT YET
+
+Do NOT implement the physical Raspberry Pi camera driver in this part.
+
+Do NOT implement VL53L0X hardware access yet.
+
+Do NOT implement capture ingestion yet.
+
+Do NOT implement image-quality processing yet.
+
+Do NOT rebuild VisionAnalysisService.
+
+Those belong to PART 2.
+
+⸻
+
+24. FINAL REPORT FOR PART 1
+
+At the end, report:
+
+1. Existing components reused
+2. New models
+3. New repositories
+4. New services
+5. New schemas
+6. New endpoints
+7. New migrations
+8. New tests
+9. Security controls implemented
+10. Environment variables added
+11. Actual tests executed and their real results
+12. Any unresolved issues
+
+Do not claim anything was implemented unless it actually exists in the repository.
+
+IMPORTANT:
+
+STOP AFTER COMPLETING PART 1.
+
+Do not start Part 2 automatically.
+
+The repository must remain in a working state so the next prompt can continue from it.
