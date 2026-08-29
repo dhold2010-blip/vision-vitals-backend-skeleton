@@ -1,0 +1,5 @@
+requests>=2.31,<3
+Pillow>=10,<13
+# Install these on the Raspberry Pi image when hardware is connected:
+# picamera2
+# adafruit-circuitpython-vl53l0x
