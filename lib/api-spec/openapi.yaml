@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Vision Vitals backend API
+servers:
+  - url: /api
+tags:
+  - name: health
+  - name: devices
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /v1/devices/register:
+    post:
+      operationId: registerDevice
+      tags: [devices]
+      security: [{ UserIdentity: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegistration"
+      responses:
+        "201": { description: Registered }
+        "400": { description: Invalid registration }
+  /v1/devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      security: [{ UserIdentity: [] }]
+      responses:
+        "200":
+          description: Devices owned by the authenticated user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Device" }
+  /v1/devices/{deviceId}:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getDevice
+      tags: [devices]
+      security: [{ UserIdentity: [] }]
+      responses:
+        "200": { description: Device }
+        "404": { description: Not found }
+    delete:
+      operationId: revokeDevice
+      tags: [devices]
+      security: [{ UserIdentity: [] }]
+      responses:
+        "204": { description: Revoked }
+  /v1/devices/{deviceId}/authenticate:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: authenticateDevice
+      tags: [devices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, writeOnly: true }
+      responses:
+        "200": { description: Device session }
+        "401": { description: Invalid credential }
+  /v1/devices/{deviceId}/heartbeat:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: deviceHeartbeat
+      tags: [devices]
+      security: [{ DeviceSession: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Heartbeat"
+      responses:
+        "200": { description: Heartbeat accepted }
+  /v1/devices/{deviceId}/status:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: deviceStatus
+      tags: [devices]
+      security: [{ UserIdentity: [] }]
+      responses:
+        "200": { description: Device status }
+  /v1/devices/{deviceId}/capture:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: submitDeviceCapture
+      tags: [devices]
+      security: [{ DeviceSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaptureRequest"
+      responses:
+        "201": { description: Capture accepted and processed }
+        "422": { description: Recapture required }
+  /v1/devices/{deviceId}/sensor-readings:
+    parameters:
+      - { name: deviceId, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: submitSensorReading
+      tags: [devices]
+      security: [{ DeviceSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SensorReading"
+      responses:
+        "201": { description: Reading accepted }
+        "400": { description: Invalid reading }
+components:
+  securitySchemes:
+    UserIdentity:
+      type: apiKey
+      in: header
+      name: x-user-id
+      description: Development identity adapter; replace with managed auth before production.
+    DeviceSession:
+      type: http
+      scheme: bearer
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    DeviceRegistration:
+      type: object
+      required: [device_identifier, device_name]
+      properties:
+        device_identifier: { type: string, minLength: 3, maxLength: 128 }
+        device_name: { type: string, minLength: 1, maxLength: 120 }
+        device_type: { type: string, default: VISION_VITALS_CAMERA }
+    Device:
+      type: object
+      required: [id, owner_user_id, device_identifier, device_name, device_type, status]
+      properties:
+        id: { type: string }
+        owner_user_id: { type: string }
+        device_identifier: { type: string }
+        device_name: { type: string }
+        device_type: { type: string }
+        status: { type: string, enum: [REGISTERED, ONLINE, OFFLINE, REVOKED, ERROR] }
+        last_seen_at: { type: string, nullable: true }
+    Heartbeat:
+      type: object
+      properties:
+        firmware_version: { type: string }
+        software_version: { type: string }
+    CaptureRequest:
+      type: object
+      required: [capture_id, image_base64]
+      properties:
+        capture_id: { type: string, minLength: 8, maxLength: 128 }
+        image_base64: { type: string, description: Base64-encoded PNG or JPEG }
+        mime_type: { type: string, enum: [image/png, image/jpeg] }
+        filename: { type: string }
+    SensorReading:
+      type: object
+      required: [sensor_type, value, unit]
+      properties:
+        sensor_type: { type: string, enum: [DISTANCE] }
+        value: { type: number, minimum: 1, maximum: 2000 }
+        unit: { type: string, enum: [mm] }
+        quality: { type: string }
+        timestamp: { type: string }
